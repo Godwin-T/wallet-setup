@@ -11,20 +11,6 @@ from fastapi.responses import PlainTextResponse
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-
-# @router.get("/google")
-# async def initiate_google_login():
-#     settings = get_settings()
-#     auth_url = "https://accounts.google.com/o/oauth2/v2/auth"
-#     return {
-#         "auth_url": auth_url,
-#         "client_id": settings.google_client_id,
-#         "redirect_uri": str(settings.google_redirect_uri),
-#         "response_type": "code",
-#         "scope": "openid email profile",
-#         "access_type": "offline",
-#         "prompt": "consent",
-#     }
 @router.get("/google")
 async def initiate_google_login_redirect():
 
@@ -39,7 +25,7 @@ async def initiate_google_login_redirect():
         "prompt": "consent",
     }
     auth_url = f"{base}?{urlencode(params)}"
-    return PlainTextResponse(auth_url)
+    return {"url": auth_url}
 
 
 @router.get("/google/callback",) # response_model=AuthResponse

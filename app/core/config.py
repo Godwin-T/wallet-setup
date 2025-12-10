@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     jwt_issuer: str = "accounts.google.com"
     api_key_limit: int = 10
     default_currency: str = "NGN"
+    paystack_verify_interval_seconds: int = 60
+    paystack_verify_backoff_seconds: int = 120
+    paystack_verify_threshold_attempts: int = 5
+    paystack_verify_worker_enabled: bool = True
 
     class Config:
         case_sensitive = False
