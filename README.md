@@ -33,7 +33,7 @@ IMPLEMENTATION_NOTES.md # Deep dive into decisions/explanations
 
 ### 1. Clone & Install
 ```bash
-git clone <repo> wallet-service && cd wallet-service
+git clone https://github.com/Godwin-T/wallet-setup wallet-service && cd wallet-service
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt  # create this file listing FastAPI, SQLAlchemy, asyncpg, httpx, PyJWT, python-dotenv, etc.
 ```
@@ -127,5 +127,3 @@ Refer to the OpenAPI schema (`/docs`) for request/response bodies.
 - Add observability (request logging, metrics) and queueing if webhook throughput grows.
 - If background verification is undesirable in some environments, disable it with `PAYSTACK_VERIFY_WORKER_ENABLED=false`.
 
-## License
-MIT or as defined by the repository owner.
