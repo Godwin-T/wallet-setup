@@ -110,27 +110,26 @@ class WalletService:
 
         ctx_manager = self.session.begin_nested() if self.session.in_transaction() else self.session.begin()
         try:
-            async with ctx_manager:
-                sender_wallet.balance -= amount
-                recipient_wallet.balance += amount
-                transaction = Transaction(
-                    user_id=sender_wallet.user_id,
-                    wallet_id=sender_wallet.id,
-                    reference=reference,
-                    type=TransactionType.transfer,
-                    amount=amount,
-                    status=TransactionStatus.success,
-                    extra_data={
-                        "recipient_wallet_id": recipient_wallet.id,
-                        "recipient_wallet_number": recipient_wallet.wallet_number,
-                    },
-                )
-                self.session.add(transaction)
+            sender_wallet.balance -= amount
+            recipient_wallet.balance += amount
+            transaction = Transaction(
+                user_id=sender_wallet.user_id,
+                wallet_id=sender_wallet.id,
+                reference=reference,
+                type=TransactionType.transfer,
+                amount=amount,
+                status=TransactionStatus.success,
+                extra_data={
+                    "recipient_wallet_id": recipient_wallet.id,
+                    "recipient_wallet_number": recipient_wallet.wallet_number,
+                },
+            )
+            self.session.add(transaction)
+            await self.session.flush()  # Flush to get the ID assigned
+            await self.session.commit()
         except SQLAlchemyError as exc:
             await self.session.rollback()
             raise HTTPException(status_code=500, detail="Transfer failed") from exc
-
-        await self.session.refresh(transaction)
         return transaction
 
     async def get_transactions(self, wallet: Wallet) -> list[Transaction]:
