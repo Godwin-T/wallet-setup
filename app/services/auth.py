@@ -4,6 +4,7 @@ import httpx
 import jwt
 from fastapi import HTTPException, status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -75,7 +76,11 @@ class AuthService:
         wallet_number = await self._generate_unique_wallet_number()
         wallet = Wallet(user_id=user.id, wallet_number=wallet_number, balance=0)
         self.session.add(wallet)
-        await self.session.commit()
+        try:
+            await self.session.commit()
+        except IntegrityError as exc:
+            await self.session.rollback()
+            raise HTTPException(status_code=409, detail="User already exists") from exc
         await self.session.refresh(user)
         return user
 

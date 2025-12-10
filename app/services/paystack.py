@@ -13,23 +13,29 @@ class PaystackClient:
 
     async def initialize_transaction(self, *, email: str, amount: int, reference: str) -> dict:
         payload = {"email": email, "amount": amount, "reference": reference}
-        async with httpx.AsyncClient(base_url=str(self.settings.paystack_base_url)) as client:
-            response = await client.post(
-                "/transaction/initialize",
-                json=payload,
-                headers=self._headers,
-                timeout=15,
-            )
+        try:
+            async with httpx.AsyncClient(base_url=str(self.settings.paystack_base_url)) as client:
+                response = await client.post(
+                    "/transaction/initialize",
+                    json=payload,
+                    headers=self._headers,
+                    timeout=15,
+                )
+        except httpx.HTTPError as exc:
+            raise HTTPException(status_code=502, detail="Unable to reach Paystack") from exc
         data = self._handle_response(response)
         return data["data"]
 
     async def verify_transaction(self, reference: str) -> dict:
-        async with httpx.AsyncClient(base_url=str(self.settings.paystack_base_url)) as client:
-            response = await client.get(
-                f"/transaction/verify/{reference}",
-                headers=self._headers,
-                timeout=10,
-            )
+        try:
+            async with httpx.AsyncClient(base_url=str(self.settings.paystack_base_url)) as client:
+                response = await client.get(
+                    f"/transaction/verify/{reference}",
+                    headers=self._headers,
+                    timeout=10,
+                )
+        except httpx.HTTPError as exc:
+            raise HTTPException(status_code=502, detail="Unable to reach Paystack") from exc
         data = self._handle_response(response)
         return data["data"]
 

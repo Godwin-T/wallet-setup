@@ -4,6 +4,7 @@ from typing import Tuple
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
 from app.core.config import get_settings
@@ -35,7 +36,11 @@ class APIKeyService:
             expires_at=expires_at,
         )
         self.session.add(api_key)
-        await self.session.commit()
+        try:
+            await self.session.commit()
+        except IntegrityError as exc:
+            await self.session.rollback()
+            raise HTTPException(status_code=400, detail="Could not create API key") from exc
         await self.session.refresh(api_key)
         return api_key, raw_key
 
@@ -62,7 +67,11 @@ class APIKeyService:
         )
         source_key.revoked = True
         self.session.add(new_key)
-        await self.session.commit()
+        try:
+            await self.session.commit()
+        except IntegrityError as exc:
+            await self.session.rollback()
+            raise HTTPException(status_code=400, detail="Could not rollover API key") from exc
         await self.session.refresh(new_key)
         return new_key, raw_key
 
