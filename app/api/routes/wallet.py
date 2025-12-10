@@ -33,11 +33,12 @@ async def paystack_webhook(request: Request, session: AsyncSession = Depends(get
 @router.get("/deposit/{reference}/status", response_model=TransactionOut)
 async def deposit_status(
     reference: str,
+    refresh: bool = True,
     context: AuthContext = Depends(require_auth("read")),
     session: AsyncSession = Depends(get_session),
 ):
     wallet_service = WalletService(session)
-    transaction = await wallet_service.get_transaction_status(reference, context.user)
+    transaction = await wallet_service.get_transaction_status(reference, context.user, refresh=refresh)
     return transaction
 
 
@@ -57,10 +58,14 @@ async def wallet_transfer(
     context: AuthContext = Depends(require_auth("transfer")),
     session: AsyncSession = Depends(get_session),
 ):
-    wallet_service = WalletService(session)
-    wallet = await wallet_service.get_wallet_for_user(context.user)
-    transaction = await wallet_service.transfer(wallet, payload.recipient_wallet_number, payload.amount, payload.reference)
-    return TransferResponse(reference=transaction.reference, status=transaction.status.value)
+    try:
+        wallet_service = WalletService(session)
+        wallet = await wallet_service.get_wallet_for_user(context.user)
+        transaction = await wallet_service.transfer(wallet, payload.recipient_wallet_number, payload.amount, payload.reference)
+        return TransferResponse(reference=transaction.reference, status=transaction.status.value)
+    except Exception:
+        await session.rollback()
+        raise
 
 
 @router.get("/transactions", response_model=list[TransactionOut])

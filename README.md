@@ -5,11 +5,12 @@ Production-grade wallet infrastructure that satisfies the HNG Stage 8 requirem
 ## Features
 - **Google Sign-In (JWT)**: Accepts Google ID tokens, auto-provisions users and wallets.
 - **Wallet Management**: Auto-generated wallet numbers, integer balances (kobo), realtime transaction ledger.
-- **Paystack Integration**: Deposit initialization, webhook signature verification, idempotent credits, and manual status checks.
+- **Paystack Integration**: Deposit initialization, webhook signature verification, idempotent credits, background retry worker, and manual status checks.
 - **Wallet-to-Wallet Transfers**: Atomic debits/credits enforced through database transactions.
 - **API Keys**: Hashed storage, permissions (read/deposit/transfer), expiry presets, max 5 active keys/user, rollover of expired keys.
 - **Auth Middleware**: Supports both `Authorization: Bearer <jwt>` and `x-api-key` flows with permission enforcement.
 - **PostgreSQL + SQLAlchemy**: Async engine with repository/service layering for clean separation.
+- **Robust Error Responses**: Global FastAPI exception handler plus contextual HTTP errors around Paystack/DB ops keep clients from seeing raw stack traces.
 
 ## Project Structure
 ```
@@ -47,6 +48,10 @@ PAYSTACK_WEBHOOK_SECRET=whsec_xxx
 GOOGLE_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
 JWT_ISSUER=accounts.google.com
 API_KEY_LIMIT=5
+PAYSTACK_VERIFY_INTERVAL_SECONDS=60
+PAYSTACK_VERIFY_BACKOFF_SECONDS=120
+PAYSTACK_VERIFY_THRESHOLD_ATTEMPTS=5
+PAYSTACK_VERIFY_WORKER_ENABLED=true
 ```
 
 ### 3. Database
@@ -83,7 +88,7 @@ Open `http://127.0.0.1:8000/docs` for the automatically generated Swagger UI.
 | `/keys/rollover` | POST | Bearer JWT | Generates a new key for an expired one while revoking the old. |
 | `/wallet/deposit` | POST | Bearer JWT or API key (`deposit`) | Initializes Paystack transaction and records pending transaction. |
 | `/wallet/paystack/webhook` | POST | Paystack signature | Idempotent webhook to verify and credit completed deposits. |
-| `/wallet/deposit/{reference}/status` | GET | Bearer/API key (`read`) | Reads transaction status without crediting. |
+| `/wallet/deposit/{reference}/status` | GET | Bearer/API key (`read`) | Reads status; with `refresh=true` (default) it hits Paystack verify API and updates the DB as a fallback. |
 | `/wallet/balance` | GET | Bearer/API key (`read`) | Returns wallet balance and basic wallet details. |
 | `/wallet/transfer` | POST | Bearer/API key (`transfer`) | Atomic wallet-to-wallet transfer with duplicate reference guard. |
 | `/wallet/transactions` | GET | Bearer/API key (`read`) | Returns wallet transactions sorted by newest first. |
@@ -93,7 +98,8 @@ Refer to the OpenAPI schema (`/docs`) for request/response bodies.
 ## Paystack Notes
 - Deposits use `/transaction/initialize`; the Paystack response is stored alongside the transaction (`extra_data`).
 - Webhook validation uses `x-paystack-signature` header (HMAC SHA-512).
-- Manual status lookup never alters balances; only webhook verification credits funds.
+- A background worker re-verifies pending deposits via `/transaction/verify/{reference}` every minute and backs off to every two minutes once an entry reaches five attempts, ensuring credit even if a webhook is missed.
+- Manual status lookup (`refresh=true`) also triggers a verification attempt and persists any new state.
 
 ## API Key Rules
 - Max 5 active (non-expired, non-revoked) keys per user.
@@ -107,11 +113,19 @@ Refer to the OpenAPI schema (`/docs`) for request/response bodies.
 - **Integration Tests**: Spin up a temporary PostgreSQL DB (e.g., via Docker) and run against Uvicorn + HTTP calls.
 - **Webhook Tests**: Provide signed payloads validating idempotency (repeat webhook for same reference credits only once).
 
+## Error Handling
+- Input validation is enforced via Pydantic schemas (permissions, expiry options, Paystack reference path params, etc.).
+- Domain errors raise `HTTPException` with explicit messages (insufficient balance, invalid API key, duplicate references, expired keys).
+- External calls (Paystack, Google OAuth) are wrapped so network issues surface as `502` JSON responses rather than stack traces.
+- A global exception handler logs unexpected failures server-side and returns `{ "detail": "Internal server error" }` so clients never see HTML debug pages.
+- Duplicate users/API keys and transfer transaction faults roll back their DB sessions and emit concise `400/409/500` responses instead of raw SQLAlchemy errors.
+
 ## Deployment Notes
 - Deploy via Uvicorn/Gunicorn with workers sized for async workloads.
 - Store Paystack secrets and Google client IDs as environment variables (never commit).
 - Terminate SSL at a reverse proxy and enforce HTTPS for JWT/API key confidentiality.
 - Add observability (request logging, metrics) and queueing if webhook throughput grows.
+- If background verification is undesirable in some environments, disable it with `PAYSTACK_VERIFY_WORKER_ENABLED=false`.
 
 ## License
 MIT or as defined by the repository owner.

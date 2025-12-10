@@ -32,6 +32,8 @@ class Transaction(Base):
     amount: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[TransactionStatus] = mapped_column(Enum(TransactionStatus), default=TransactionStatus.pending)
     extra_data: Mapped[dict | None] = mapped_column(JSON, default=dict)
+    verification_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    last_verification_attempt: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     wallet: Mapped["Wallet"] = relationship(back_populates="transactions")

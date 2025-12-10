@@ -15,7 +15,7 @@ This document explains each major decision in the Stage 8 wallet backend so ne
 - **Models (`app/models/*`)**:
   - `User`: Stores Google identity; `wallet` relationship is one-to-one to guarantee exactly one wallet per user.
   - `Wallet`: Unique `wallet_number` string and integer `balance` in kobo to avoid floating point precision problems.
-  - `Transaction`: Enum-backed `type` and `status` fields capture deposit/transfer flows with a JSON field (`extra_data`) for Paystack payloads and transfer details. Unique `reference` enforces idempotency.
+  - `Transaction`: Enum-backed `type` and `status` fields capture deposit/transfer flows with a JSON field (`extra_data`) for Paystack payloads, plus verification metadata (`verification_attempts`, `last_verification_attempt`) so the retry worker can pick up pending records safely.
   - `APIKey`: Enforces hashed storage, permission arrays, expiry timestamps, and revocation flag.
 
 ## 4. Authentication
@@ -24,8 +24,8 @@ This document explains each major decision in the Stage 8 wallet backend so ne
   - Automatically provisions a wallet with a generated 12-digit number on first login; ensures each user can transact immediately.
 - **API Keys (`APIKeyService`)**:
   - `generate_api_key()` returns a random secret; `hash_api_key()` uses PBKDF2 with per-key salt and 100k iterations for security.
-  - `create_key()` enforces permission validation and the max 5 active keys per user, preventing abuse.
-  - `rollover()` revokes an expired key and clones its permissions/name into a brand new record with a fresh secret; TTL is derived from the original key's lifespan.
+  - `create_key()` enforces permission validation and the max 5 active keys per user, preventing abuse, and wraps commits in `IntegrityError` handling so the API responds with a clean 400 if a race occurs.
+  - `rollover()` revokes an expired key and clones its permissions/name into a brand new record with a fresh secret; TTL is derived from the original key's lifespan and is likewise guarded against DB integrity faults.
   - `authenticate()` iterates active, non-expired keys and checks hashed values. Permission checks happen before returning, surfacing `403` vs `401` distinctly.
 - **Dependency (`require_auth`)**:
   - Accepts either `Authorization: Bearer <jwt>` or `x-api-key`. Returns an `AuthContext` object so downstream routes can access the resolved user/api-key pair.
@@ -39,10 +39,13 @@ This document explains each major decision in the Stage 8 wallet backend so ne
   4. Persist Paystack response data for traceability and return `reference` + `authorization_url`.
 - **Webhook Handling**:
   - Uses HMAC SHA-512 with Paystack webhook secret for signature validation; rejects invalid payloads before touching the DB.
-  - Parses JSON, extracts `reference`, and delegates to `verify_and_credit`.
-  - `verify_and_credit` calls Paystack `/transaction/verify`, ensures success, and uses `async with session.begin()` to atomically credit wallet + mark transaction `success`. Subsequent webhook retries are idempotent because the status short-circuits.
+  - Parses JSON, extracts `reference`, and delegates to `verify_and_credit`, which records the verification attempt, calls Paystack `/transaction/verify/{reference}`, and updates wallet + transaction in a single commit.
 - **Manual Status Checks**:
-  - `/wallet/deposit/{reference}/status` simply fetches transaction (owned by the authenticated user) without mutating balances to respect the “must not credit” rule.
+  - `/wallet/deposit/{reference}/status` accepts `refresh=true` to force a Paystack verification call, mirroring the fallback curl example.
+- **Automated Fallback**:
+  - `retry_pending_transactions()` scans pending deposits, respects per-transaction backoff rules (1 minute between attempts until five tries, then 2 minutes), and reuses the same verification/credit logic.
+- **Background Worker**:
+  - An asyncio task runs every `PAYSTACK_VERIFY_INTERVAL_SECONDS` (default 60s) to invoke `retry_pending_transactions`. Behavior is configurable via env vars and can be disabled entirely.
 - **Transfers**:
   - Validates recipient wallet existence, prevents self-transfer, enforces duplicate reference guard, checks balance, and executes debit/credit in a single transaction context to maintain atomicity even under concurrent operations.
 - **Transaction Queries**:
@@ -51,7 +54,11 @@ This document explains each major decision in the Stage 8 wallet backend so ne
 ## 6. Paystack Client (`app/services/paystack.py`)
 - **HTTPX AsyncClient**: Handles deposit initialization/verification with default timeouts (15s initialize, 10s verify).
 - **Signature Verification**: `verify_signature` compares Paystack header to locally computed HMAC digest.
-- **Error Surfacing**: `_handle_response` raises FastAPI HTTP errors with Paystack message to keep clients informed.
+- **Error Surfacing**: `_handle_response` raises FastAPI HTTP errors with Paystack message, and network failures bubble up as `502` responses instead of raw tracebacks.
+
+### Global Error Handling
+- `app/main.py` registers a catch-all exception handler that logs the original stack trace and returns `{ "detail": "Internal server error" }`, shielding clients from FastAPI’s default HTML error pages.
+- Wallet transfers and verification attempts catch `SQLAlchemyError`/`IntegrityError` so nested transaction issues or racing updates roll back and emit consistent HTTP errors.
 
 ## 7. API Routes (`app/api/routes/*`)
 - **Auth**: Minimal placeholder endpoints for Google auth URL and callback. Callback goes through `AuthService` then returns combined user + wallet_id view.
@@ -76,7 +83,7 @@ This document explains each major decision in the Stage 8 wallet backend so ne
   - Proper Google JWT signature validation (download & cache JWKS).
   - Alembic migrations to version control the schema.
   - Automated tests (unit/integration) and CI.
-  - Background retry mechanism if Paystack API is temporarily unavailable.
+  - Hardened Google JWT verification once JWKS caching is added.
 
 ## 11. Testing Strategy (Recommended)
 - **Unit Tests**: Mock Paystack client, assert wallet balances and transaction statuses after calling service methods.

@@ -1,8 +1,8 @@
-"""initialize
+"""init
 
-Revision ID: de07c59b4b15
+Revision ID: 79207baae1f4
 Revises: 
-Create Date: 2025-12-10 14:20:46.416439
+Create Date: 2025-12-10 20:31:45.235389
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'de07c59b4b15'
+revision: str = '79207baae1f4'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -63,6 +63,8 @@ def upgrade() -> None:
     sa.Column('amount', sa.Integer(), nullable=False),
     sa.Column('status', sa.Enum('pending', 'success', 'failed', name='transactionstatus'), nullable=False),
     sa.Column('extra_data', sa.JSON(), nullable=True),
+    sa.Column('verification_attempts', sa.Integer(), nullable=False),
+    sa.Column('last_verification_attempt', sa.DateTime(timezone=True), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['wallet_id'], ['wallets.id'], ondelete='CASCADE'),
