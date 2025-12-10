@@ -2,6 +2,9 @@
 
 Production-grade wallet infrastructure that satisfies the HNG Stage 8 requirements. The service exposes a FastAPI interface for Google Sign-In, wallet deposits via Paystack, webhook processing, wallet-to-wallet transfers, transaction history, and full API key lifecycle support.
 
+> **Heads-up for Backend Mentors (Swagger testing only)**  
+> To make manual tests easier inside `/docs`, the Google callback temporarily returns the ID token in its payload so it can be copied/pasted into the global “Authorize” dialog (padlock icon). That’s *not* how the production flow will behave; in a real frontend the ID token would stay client-side, and the Swagger workaround isn’t part of the protocol.
+
 ## Features
 - **Google Sign-In (JWT)**: Accepts Google ID tokens, auto-provisions users and wallets.
 - **Wallet Management**: Auto-generated wallet numbers, integer balances (kobo), realtime transaction ledger.
@@ -126,4 +129,3 @@ Refer to the OpenAPI schema (`/docs`) for request/response bodies.
 - Terminate SSL at a reverse proxy and enforce HTTPS for JWT/API key confidentiality.
 - Add observability (request logging, metrics) and queueing if webhook throughput grows.
 - If background verification is undesirable in some environments, disable it with `PAYSTACK_VERIFY_WORKER_ENABLED=false`.
-
