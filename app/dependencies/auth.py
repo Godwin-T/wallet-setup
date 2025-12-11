@@ -8,7 +8,9 @@ from app.db.session import get_session
 from app.models import APIKey, User
 from app.services.api_keys import APIKeyService
 from app.services.auth import AuthService
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+bearer_scheme = HTTPBearer(auto_error=False)
 
 @dataclass
 class AuthContext:
@@ -17,22 +19,23 @@ class AuthContext:
 
 
 async def get_authenticated_user(
-    authorization: str = Header(...),
+    bearer: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
     session: AsyncSession = Depends(get_session),
 ) -> User:
-    token = _extract_bearer_token(authorization)
+    # token = _extract_bearer_token(authorization)
+    token = bearer.credentials if bearer else None
     auth_service = AuthService(session)
     return await auth_service.get_or_create_user(token)
 
 
 def require_auth(permission: str | None = None) -> Callable:
     async def dependency(
-        authorization: str | None = Header(default=None),
+        bearer: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
         x_api_key: str | None = Header(default=None, alias="x-api-key"),
         session: AsyncSession = Depends(get_session),
     ) -> AuthContext:
-        if authorization:
-            token = _extract_bearer_token(authorization)
+        token = bearer.credentials if bearer else None
+        if token:
             auth_service = AuthService(session)
             user = await auth_service.get_or_create_user(token)
             return AuthContext(user=user)

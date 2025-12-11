@@ -26,3 +26,7 @@ class APIKeyWithSecret(APIKeyOut):
 
 class APIKeyRollover(BaseModel):
     api_key_id: int
+
+
+class APIKeyRevoke(BaseModel):
+    api_key_id: int

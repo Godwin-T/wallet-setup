@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_session
 from app.dependencies.auth import get_authenticated_user
 from app.models import User
-from app.schemas.api_key import APIKeyCreate, APIKeyRollover, APIKeyWithSecret
+from app.schemas.api_key import APIKeyCreate, APIKeyOut, APIKeyRevoke, APIKeyRollover, APIKeyWithSecret
 from app.services.api_keys import APIKeyService
 
 router = APIRouter(prefix="/keys", tags=["api_keys"])
@@ -51,3 +51,29 @@ async def rollover_api_key(
         created_at=api_key.created_at,
         key=raw_key,
     )
+
+
+@router.post("/revoke", response_model=APIKeyOut)
+async def revoke_api_key(
+    payload: APIKeyRevoke,
+    current_user: User = Depends(get_authenticated_user),
+    session: AsyncSession = Depends(get_session),
+):
+    service = APIKeyService(session)
+    api_key = await service.revoke_key(current_user, payload.api_key_id)
+    return APIKeyOut(
+        id=api_key.id,
+        name=api_key.name,
+        permissions=api_key.permissions,
+        expires_at=api_key.expires_at,
+        revoked=api_key.revoked,
+        created_at=api_key.created_at,
+    )
+@router.get("/", response_model=list[APIKeyOut])
+async def list_api_keys(
+    current_user: User = Depends(get_authenticated_user),
+    session: AsyncSession = Depends(get_session),
+):
+    service = APIKeyService(session)
+    keys = await service.list_keys(current_user)
+    return keys

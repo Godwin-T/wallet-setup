@@ -7,7 +7,6 @@ from app.schemas.auth import AuthResponse
 from app.services.auth import AuthService
 from app.services.wallet import WalletService
 from urllib.parse import urlencode
-from fastapi.responses import PlainTextResponse
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 

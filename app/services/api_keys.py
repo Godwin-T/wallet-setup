@@ -109,3 +109,20 @@ class APIKeyService:
         if expiry not in delta_map:
             raise HTTPException(status_code=400, detail="Invalid expiry option")
         return datetime.now(timezone.utc) + delta_map[expiry]
+
+    async def revoke_key(self, user: User, api_key_id: int) -> APIKey:
+        api_key = await self.session.get(APIKey, api_key_id)
+        if not api_key or api_key.user_id != user.id:
+            raise HTTPException(status_code=404, detail="API key not found")
+        if api_key.revoked:
+            raise HTTPException(status_code=400, detail="API key already revoked")
+
+        api_key.revoked = True
+        await self.session.commit()
+        await self.session.refresh(api_key)
+        return api_key
+
+    async def list_keys(self, user: User) -> list[APIKey]:
+        stmt = select(APIKey).where(APIKey.user_id == user.id).order_by(APIKey.created_at.desc())
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
